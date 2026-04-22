@@ -1,0 +1,70 @@
+{
+  "TranslationProperties": {
+    "Name": "Saddle",
+    "Description": "Vanilla Saddle item with custom features for Horse Overhaul."
+  },
+  "Id": "Horse_Saddle",
+  "Icon": "Icons/ItemsGenerated/Horse_Overhaul_Saddle_Icon.png",
+  "IconProperties": {
+    "Scale": 0.5,
+    "Rotation": [
+      14,
+      45,
+      9
+    ],
+    "Translation": [
+      1,
+      -2
+    ]
+  },
+  "Model": "Items/Horse_Overhaul_Saddle/Saddle.blockymodel",
+  "Texture": "Items/Horse_Overhaul_Saddle/Saddle_Texture.png",
+  "PlayerAnimationsId": "Block",
+  "Quality": "Common",
+  "MaxStack": 1,
+  "Categories": [
+    "Items.HorseOverhaul"
+  ],
+  "SubCategory": "Saddles",
+  "Container": {
+    "Capacity": 9
+  },
+  "Interactions": {
+    "Use": {
+      "Interactions": [
+        {
+          "Type": "horse_overhaul_open_saddle_inventory"
+        }
+      ]
+    },
+    "Secondary": {
+      "Interactions": [
+        {
+          "Type": "horse_overhaul_equip_saddle_on_horse"
+        }
+      ]
+    }
+  },
+  "Recipe": {
+    "TimeSeconds": 3,
+    "Input": [
+      {
+        "ItemId": "Ingredient_Leather_Light",
+        "Quantity": 3
+      },
+      {
+        "ItemId": "Ingredient_Bar_Copper",
+        "Quantity": 1
+      }
+    ],
+    "BenchRequirement": [
+      {
+        "Id": "Farmingbench",
+        "Type": "Crafting",
+        "Categories": [
+          "Farming"
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,73 @@
+$Common = "Common.ui";
+
+@PanelTitleStyle = LabelStyle(
+  FontSize: 22,
+  Alignment: Center,
+  RenderBold: true
+);
+
+@PanelLabelStyle = LabelStyle(
+  FontSize: 14,
+  Alignment: Center,
+  RenderBold: true
+);
+
+@PanelValueStyle = LabelStyle(
+  FontSize: 28,
+  Alignment: Center,
+  RenderBold: true
+);
+
+Group #SaddleBagInfoHudRoot {
+  Anchor: (Full: 0);
+  LayoutMode: Full;
+
+  Group #SaddleBagInfoPanel {
+    Anchor: (Top: 128, Right: 152, Width: 292, Height: 360);
+    Padding: (Top: 28, Left: 20, Right: 20, Bottom: 24);
+    LayoutMode: Top;
+
+    Group #SaddleBagItemNameRow {
+      Anchor: (Width: 252, Height: 34);
+      LayoutMode: Center;
+
+      Label #SaddleBagItemName {
+        Anchor: (Width: 220, Height: 30);
+        Style: @PanelTitleStyle;
+        Text: "Saddle";
+      }
+    }
+
+    Group #SaddleBagItemIconRow {
+      Anchor: (Top: 20, Width: 252, Height: 112);
+      LayoutMode: Center;
+
+      AssetImage #SaddleBagItemIcon {
+        Anchor: (Width: 96, Height: 96);
+        AssetPath: "Icons/ItemsGenerated/Horse_Overhaul_Saddle_Icon.png";
+      }
+    }
+
+    Group #SaddleBagArmorHeaderRow {
+      Anchor: (Top: 20, Width: 252, Height: 20);
+      LayoutMode: Center;
+
+      Label #SaddleBagArmorHeader {
+        Anchor: (Width: 120, Height: 20);
+        Style: @PanelLabelStyle;
+        Text: "ARMOR";
+      }
+    }
+
+    Group #SaddleBagArmorValueRow {
+      Anchor: (Top: 10, Width: 252, Height: 40);
+      LayoutMode: Center;
+
+      Label #SaddleBagArmorValue {
+        Anchor: (Width: 120, Height: 36);
+        Style: @PanelValueStyle;
+        Text: "0";
+      }
+    }
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "Group": "me.icicle",
+  "Name": "HorseOverhaul",
+  "Version": "0.4.3",
+  "Description": "Overhaul your horses and add saddles for extra storage.",
+  "Authors": [
+    {
+      "Name": "Icicle"
+    }
+  ],
+  "Main": "me.icicle.plugin.HorseOverhaul",
+  "ServerVersion": "2026.03.26-89796e57b",
+  "IncludesAssetPack": true,
+  "SubPlugins": []
+}

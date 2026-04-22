@@ -1,0 +1,186 @@
+@OverlayBackground = PatchStyle(Color: #000000d8);
+@PanelFrameBackground = PatchStyle(Color: #6a7889);
+@PanelBackground = PatchStyle(Color: #25303d);
+@HeaderBackground = PatchStyle(Color: #1a2330);
+
+@TitleStyle = LabelStyle(
+  FontSize: 19,
+  Alignment: Center,
+  VerticalAlignment: Center,
+  FontName: "Secondary",
+  TextColor: #b4c8c9,
+  RenderUppercase: true,
+  RenderBold: true
+);
+
+@SectionStyle = LabelStyle(
+  FontSize: 15,
+  Alignment: Center,
+  VerticalAlignment: Center,
+  TextColor: #96a9be,
+  RenderUppercase: true,
+  RenderBold: true
+);
+
+@BodyStyle = LabelStyle(
+  FontSize: 14,
+  Alignment: Center,
+  TextColor: #cfd6e0,
+  Wrap: true
+);
+
+@HintStyle = LabelStyle(
+  FontSize: 13,
+  Alignment: Center,
+  TextColor: #8797ab,
+  RenderBold: true
+);
+
+Group #HorseOverhaulHelpRoot {
+  Anchor: (Full: 0);
+  LayoutMode: Middle;
+  Background: @OverlayBackground;
+
+  Group #HorseOverhaulHelpFrame {
+    Anchor: (Width: 764);
+    LayoutMode: Full;
+    Padding: (Full: 2);
+    Background: @PanelFrameBackground;
+
+    Group #HorseOverhaulHelpPanel {
+      Anchor: (Full: 0);
+      LayoutMode: Top;
+      Padding: (Full: 18, Top: 18, Bottom: 18);
+      Background: @PanelBackground;
+
+      Group #HeaderBar {
+        Anchor: (Height: 48, Bottom: 14);
+        LayoutMode: Center;
+        Background: @HeaderBackground;
+
+        Label #Title {
+          Anchor: (Width: 360, Height: 36);
+          Style: @TitleStyle;
+          Text: "Horse Overhaul";
+        }
+      }
+
+      Group #BodyPanel {
+        LayoutMode: Top;
+        Padding: (Left: 4, Right: 4, Top: 0, Bottom: 0);
+
+        Group #IconRow {
+          Anchor: (Height: 84, Bottom: 12);
+          LayoutMode: Center;
+
+          AssetImage #SaddleIcon {
+            Anchor: (Width: 72, Height: 72);
+            AssetPath: "Icons/ItemsGenerated/Horse_Overhaul_Saddle_Icon.png";
+          }
+        }
+
+        Group #CraftingSection {
+          Anchor: (Height: 96, Bottom: 8);
+          LayoutMode: Top;
+          Padding: (Top: 10, Left: 12, Right: 12, Bottom: 10);
+
+          Label #CraftingHeader {
+            Anchor: (Height: 22);
+            Style: @SectionStyle;
+            Text: "Crafting";
+          }
+
+          Label #CraftingLineOne {
+            Anchor: (Height: 22, Top: 4);
+            Style: @BodyStyle;
+            Text: "Craft the Saddle at the Farming Bench.";
+          }
+
+          Label #CraftingLineTwo {
+            Anchor: (Height: 22, Top: 2);
+            Style: @BodyStyle;
+            Text: "Cost: 3x Light Leather and 1x Copper Ingot.";
+          }
+        }
+
+        Group #EquipSection {
+          Anchor: (Height: 74, Bottom: 8);
+          LayoutMode: Top;
+          Padding: (Top: 10, Left: 12, Right: 12, Bottom: 10);
+
+          Label #EquipHeader {
+            Anchor: (Height: 22);
+            Style: @SectionStyle;
+            Text: "Equipping";
+          }
+
+          Label #EquipLineOne {
+            Anchor: (Height: 22, Top: 4);
+            Style: @BodyStyle;
+            Text: "Hold the Saddle in your hotbar and use Secondary Action on a horse.";
+          }
+
+          Label #EquipLineTwo {
+            Anchor: (Height: 22, Top: 2);
+            Style: @BodyStyle;
+            Text: "This equips the saddle and tames the horse.";
+          }
+        }
+
+        Group #UsageSection {
+          Anchor: (Height: 96, Bottom: 8);
+          LayoutMode: Top;
+          Padding: (Top: 10, Left: 12, Right: 12, Bottom: 10);
+
+          Label #UsageHeader {
+            Anchor: (Height: 22);
+            Style: @SectionStyle;
+            Text: "Usage";
+          }
+
+          Label #UsageLineOne {
+            Anchor: (Height: 22, Top: 4);
+            Style: @BodyStyle;
+            Text: "Primary Action on a saddled horse will open the horse and saddle inventories.";
+          }
+
+          Label #UsageLineTwo {
+            Anchor: (Height: 22, Top: 2);
+            Style: @BodyStyle;
+            Text: "Press the Use key while holding the saddle to open the saddle's inventory.";
+          }
+        }
+
+        Group #BugsSection {
+          Anchor: (Height: 96, Bottom: 12);
+          LayoutMode: Top;
+          Padding: (Top: 10, Left: 12, Right: 12, Bottom: 10);
+
+          Label #BugHeader {
+            Anchor: (Height: 22);
+            Style: @SectionStyle;
+            Text: "Known Bugs";
+          }
+
+          Label #BugLineOne {
+            Anchor: (Height: 22, Top: 4);
+            Style: @BodyStyle;
+            Text: "High: Saddle and horse's inventories are inaccessible while mounted.";
+          }
+
+          Label #BugLineTwo {
+            Anchor: (Height: 22, Top: 2);
+            Style: @BodyStyle;
+            Text: "High: Equipped saddle is currently displayed read-only in the horse's inventory";
+          }
+        }
+
+        Label #CloseHint {
+          Anchor: (Height: 20, Top: 2);
+          Style: @HintStyle;
+          Text: "Press Esc to close.";
+        }
+      }
+    }
+  }
+}

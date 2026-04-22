@@ -1,0 +1,17 @@
+{
+  "TranslationProperties": {
+    "Name": "Locked Slot",
+    "Description": "Reserved horse inventory slot."
+  },
+  "Id": "Horse_Locked_Slot",
+  "Icon": "Icons/ItemsGenerated/Horse_Locked_Slot_Icon.png",
+  "Model": "Items/Horse_Overhaul_Saddle/Saddle.blockymodel",
+  "Texture": "Items/Horse_Overhaul_Saddle/Saddle_Texture.png",
+  "PlayerAnimationsId": "Block",
+  "Quality": "Common",
+  "MaxStack": 1,
+  "Categories": [
+    "Items.HorseOverhaul"
+  ],
+  "SubCategory": "Saddles"
+}
