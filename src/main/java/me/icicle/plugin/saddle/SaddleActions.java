@@ -8,6 +8,7 @@ import com.hypixel.hytale.component.ArchetypeChunk;
 import com.hypixel.hytale.component.CommandBuffer;
 import com.hypixel.hytale.component.Ref;
 import com.hypixel.hytale.component.Store;
+import com.hypixel.hytale.codec.EmptyExtraInfo;
 import com.hypixel.hytale.math.vector.Vector3d;
 import com.hypixel.hytale.math.vector.Vector3f;
 import com.hypixel.hytale.protocol.packets.interface_.Page;
@@ -31,6 +32,7 @@ import me.icicle.plugin.HorseOverhaul;
 import me.icicle.plugin.component.EquippedSaddleComponent;
 import me.icicle.plugin.ui.HorseInventoryWindow;
 import me.icicle.plugin.ui.SaddleBagWindow;
+import org.bson.BsonDocument;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -45,14 +47,13 @@ public final class SaddleActions {
     public static final String SADDLE_ITEM_ID = "Horse_Saddle";
     private static final String LOCKED_SLOT_ITEM_ID = "Horse_Locked_Slot";
 
-    private static final short SADDLE_SLOT_COUNT = 9;
     private static final short HORSE_SADDLE_SLOT_CAPACITY = 1;
-    private static final short HORSE_INVENTORY_SLOT_COUNT = 18;
     private static final short HORSE_GEAR_SLOT_INDEX = 0;
     private static final short HORSE_BAG_SLOT_START = 9;
     private static final String HORSE_ROLE_NAME = "Horse";
     private static final String TAMED_HORSE_ROLE_NAME = "Tamed_Horse";
     private static final String SADDLED_HORSE_ROLE_NAME = "Horse_Overhaul_Saddled";
+    private static final String PETTABLE_SADDLED_HORSE_ROLE_NAME = "Horse_Overhaul_Saddled_Pettable";
     private static final long MOUNTED_UNSADDLE_FINALIZE_DELAY_MS = 75L;
     private static final int MAX_MOUNTED_UNSADDLE_FINALIZE_ATTEMPTS = 8;
     private static final ScheduledExecutorService mountedUnsaddleExecutor = Executors.newSingleThreadScheduledExecutor(new ThreadFactory() {
@@ -87,16 +88,20 @@ public final class SaddleActions {
             return false;
         }
 
-        ItemStackItemContainer saddleContainer = ItemStackItemContainer.ensureContainer(
+        ItemStackItemContainer saddleContainer = ensureSaddleContainerCapacity(
                 hotbar,
                 hotbarSlot,
-                SADDLE_SLOT_COUNT
+                getConfiguredSaddleSlotCount()
         );
         if (saddleContainer == null) {
             return false;
         }
 
-        SaddleBagWindow saddleWindow = new SaddleBagWindow(saddleContainer);
+        SaddleBagWindow saddleWindow = new SaddleBagWindow(
+                saddleContainer,
+                getConfiguredSaddleSlotCount(),
+                getConfiguredSaddleRowCount()
+        );
         boolean opened = player.getPageManager().setPageWithWindows(
                 playerRef,
                 store,
@@ -131,16 +136,20 @@ public final class SaddleActions {
             return false;
         }
 
-        ItemStackItemContainer persistedContainer = ItemStackItemContainer.ensureContainer(
+        ItemStackItemContainer persistedContainer = ensureSaddleContainerCapacity(
                 saddleSlotContainer,
                 (short) 0,
-                SADDLE_SLOT_COUNT
+                getConfiguredSaddleSlotCount()
         );
         if (persistedContainer == null) {
             return false;
         }
 
-        SaddleBagWindow saddleWindow = new SaddleBagWindow(persistedContainer);
+        SaddleBagWindow saddleWindow = new SaddleBagWindow(
+                persistedContainer,
+                getConfiguredSaddleSlotCount(),
+                getConfiguredSaddleRowCount()
+        );
         boolean opened = player.getPageManager().setPageWithWindows(
                 playerRef,
                 store,
@@ -175,7 +184,12 @@ public final class SaddleActions {
             return false;
         }
 
-        HorseInventoryWindow horseInventoryWindow = new HorseInventoryWindow(horseInventoryContainer, targetEntity);
+        HorseInventoryWindow horseInventoryWindow = new HorseInventoryWindow(
+                horseInventoryContainer,
+                targetEntity,
+                getConfiguredHorseInventorySlotCount(),
+                getConfiguredHorseInventoryRowCount()
+        );
         boolean opened = player.getPageManager().setPageWithWindows(
                 playerRef,
                 store,
@@ -278,7 +292,7 @@ public final class SaddleActions {
             return false;
         }
 
-        int saddledHorseRoleIndex = NPCPlugin.get().getIndex(SADDLED_HORSE_ROLE_NAME);
+        int saddledHorseRoleIndex = NPCPlugin.get().getIndex(getConfiguredSaddledHorseRoleName());
         if (saddledHorseRoleIndex < 0) {
             return false;
         }
@@ -340,7 +354,12 @@ public final class SaddleActions {
             return false;
         }
 
-        return SADDLED_HORSE_ROLE_NAME.equals(targetNpc.getRoleName()) || hasEquippedSaddle(store, targetEntity);
+        return isSaddledHorseRoleName(targetNpc.getRoleName()) || hasEquippedSaddle(store, targetEntity);
+    }
+
+    public static boolean isSaddledHorseRoleName(String roleName) {
+        return SADDLED_HORSE_ROLE_NAME.equals(roleName)
+                || PETTABLE_SADDLED_HORSE_ROLE_NAME.equals(roleName);
     }
 
     private static SimpleItemContainer createHorseSaddleSlotContainer(
@@ -369,7 +388,7 @@ public final class SaddleActions {
             return null;
         }
 
-        SimpleItemContainer horseInventoryContainer = new SimpleItemContainer(HORSE_INVENTORY_SLOT_COUNT);
+        SimpleItemContainer horseInventoryContainer = new SimpleItemContainer(getConfiguredHorseInventorySlotCount());
         configureHorseInventoryFilters(horseInventoryContainer);
         horseInventoryContainer.setItemStackForSlot(HORSE_GEAR_SLOT_INDEX, saddleStack);
         loadLockedHorseGearSlots(horseInventoryContainer);
@@ -405,7 +424,7 @@ public final class SaddleActions {
             return equippedSaddle.getSaddleStack();
         }
 
-        if (!SADDLED_HORSE_ROLE_NAME.equals(targetNpc.getRoleName())) {
+        if (!isSaddledHorseRoleName(targetNpc.getRoleName())) {
             return ItemStack.EMPTY;
         }
 
@@ -530,17 +549,17 @@ public final class SaddleActions {
             return;
         }
 
-        ItemStackItemContainer saddleBagContainer = ItemStackItemContainer.ensureContainer(
+        ItemStackItemContainer saddleBagContainer = ensureSaddleContainerCapacity(
                 horseInventoryContainer,
                 HORSE_GEAR_SLOT_INDEX,
-                SADDLE_SLOT_COUNT
+                getConfiguredSaddleSlotCount()
         );
         if (saddleBagContainer == null) {
             clearHorseBagSlots(horseInventoryContainer);
             return;
         }
 
-        for (short slot = 0; slot < SADDLE_SLOT_COUNT; slot++) {
+        for (short slot = 0; slot < getConfiguredSaddleSlotCount(); slot++) {
             horseInventoryContainer.setItemStackForSlot(
                     (short) (HORSE_BAG_SLOT_START + slot),
                     saddleBagContainer.getItemStack(slot)
@@ -554,16 +573,16 @@ public final class SaddleActions {
             return;
         }
 
-        ItemStackItemContainer saddleBagContainer = ItemStackItemContainer.ensureContainer(
+        ItemStackItemContainer saddleBagContainer = ensureSaddleContainerCapacity(
                 horseInventoryContainer,
                 HORSE_GEAR_SLOT_INDEX,
-                SADDLE_SLOT_COUNT
+                getConfiguredSaddleSlotCount()
         );
         if (saddleBagContainer == null) {
             return;
         }
 
-        for (short slot = 0; slot < SADDLE_SLOT_COUNT; slot++) {
+        for (short slot = 0; slot < getConfiguredSaddleSlotCount(); slot++) {
             saddleBagContainer.setItemStackForSlot(
                     slot,
                     horseInventoryContainer.getItemStack((short) (HORSE_BAG_SLOT_START + slot))
@@ -572,9 +591,50 @@ public final class SaddleActions {
     }
 
     private static void clearHorseBagSlots(SimpleItemContainer horseInventoryContainer) {
-        for (short slot = 0; slot < SADDLE_SLOT_COUNT; slot++) {
+        for (short slot = 0; slot < getConfiguredSaddleSlotCount(); slot++) {
             horseInventoryContainer.setItemStackForSlot((short) (HORSE_BAG_SLOT_START + slot), ItemStack.EMPTY);
         }
+    }
+
+    private static ItemStackItemContainer ensureSaddleContainerCapacity(
+            ItemContainer parentContainer,
+            short slot,
+            short capacity
+    ) {
+        ItemStack itemStack = parentContainer.getItemStack(slot);
+        if (ItemStack.isEmpty(itemStack)) {
+            return null;
+        }
+
+        ItemStackItemContainer existingContainer = ItemStackItemContainer.getContainer(parentContainer, slot);
+        if (existingContainer != null && existingContainer.getCapacity() == capacity) {
+            return existingContainer;
+        }
+
+        if (existingContainer == null) {
+            return ItemStackItemContainer.ensureContainer(parentContainer, slot, capacity);
+        }
+
+        ItemStack[] resizedItems = new ItemStack[capacity];
+        short slotsToCopy = (short) Math.min(existingContainer.getCapacity(), capacity);
+        for (short itemSlot = 0; itemSlot < capacity; itemSlot++) {
+            resizedItems[itemSlot] = itemSlot < slotsToCopy
+                    ? normalizeItemStack(existingContainer.getItemStack(itemSlot))
+                    : ItemStack.EMPTY;
+        }
+
+        BsonDocument metadata = itemStack.getMetadata() == null
+                ? new BsonDocument()
+                : itemStack.getMetadata().clone();
+        BsonDocument containerMetadata = itemStack.getFromMetadataOrNull(ItemStackItemContainer.CONTAINER_CODEC);
+        BsonDocument updatedContainerMetadata = containerMetadata == null
+                ? new BsonDocument()
+                : containerMetadata.clone();
+        ItemStackItemContainer.CONTAINER_CODEC.put(metadata, updatedContainerMetadata, EmptyExtraInfo.EMPTY);
+        ItemStackItemContainer.CAPACITY_CODEC.put(updatedContainerMetadata, capacity, EmptyExtraInfo.EMPTY);
+        ItemStackItemContainer.ITEMS_CODEC.put(updatedContainerMetadata, resizedItems, EmptyExtraInfo.EMPTY);
+        parentContainer.setItemStackForSlot(slot, itemStack.withMetadata(metadata));
+        return ItemStackItemContainer.getContainer(parentContainer, slot);
     }
 
     private static void clearHorseSaddle(
@@ -759,6 +819,43 @@ public final class SaddleActions {
         return mountedByComponent != null && !mountedByComponent.getPassengers().isEmpty();
     }
 
+    private static short getConfiguredSaddleSlotCount() {
+        HorseOverhaul plugin = HorseOverhaul.get();
+        return plugin != null && plugin.getHorseOverhaulConfig() != null
+                ? plugin.getHorseOverhaulConfig().getSaddleStorageSlots()
+                : HORSE_BAG_SLOT_START;
+    }
+
+    private static short getConfiguredSaddleRowCount() {
+        HorseOverhaul plugin = HorseOverhaul.get();
+        return plugin != null && plugin.getHorseOverhaulConfig() != null
+                ? plugin.getHorseOverhaulConfig().getSaddleStorageRows()
+                : 1;
+    }
+
+    private static short getConfiguredHorseInventorySlotCount() {
+        HorseOverhaul plugin = HorseOverhaul.get();
+        return plugin != null && plugin.getHorseOverhaulConfig() != null
+                ? plugin.getHorseOverhaulConfig().getHorseInventorySlots()
+                : (short) (HORSE_BAG_SLOT_START + getConfiguredSaddleSlotCount());
+    }
+
+    private static short getConfiguredHorseInventoryRowCount() {
+        HorseOverhaul plugin = HorseOverhaul.get();
+        return plugin != null && plugin.getHorseOverhaulConfig() != null
+                ? plugin.getHorseOverhaulConfig().getHorseInventoryRows()
+                : (short) (1 + getConfiguredSaddleRowCount());
+    }
+
+    private static String getConfiguredSaddledHorseRoleName() {
+        HorseOverhaul plugin = HorseOverhaul.get();
+        return plugin != null
+                && plugin.getHorseOverhaulConfig() != null
+                && plugin.getHorseOverhaulConfig().isSaddledHorsePettingEnabled()
+                ? PETTABLE_SADDLED_HORSE_ROLE_NAME
+                : SADDLED_HORSE_ROLE_NAME;
+    }
+
     private static ItemStack normalizeItemStack(ItemStack itemStack) {
         return itemStack == null ? ItemStack.EMPTY : itemStack;
     }
@@ -857,6 +954,52 @@ public final class SaddleActions {
         EquippedSaddleComponent equippedSaddle = store.getComponent(targetEntity, EquippedSaddleComponent.getComponentType());
         boolean hasEquippedSaddle = equippedSaddle != null && !ItemStack.isEmpty(equippedSaddle.getSaddleStack());
         return targetNpc.getRoleName() + ",equipped=" + hasEquippedSaddle;
+    }
+
+    public static void syncConfiguredSaddledHorseRoles(com.hypixel.hytale.server.core.universe.world.World world) {
+        if (world == null) {
+            return;
+        }
+
+        world.execute(() -> {
+            Store<EntityStore> store = world.getEntityStore().getStore();
+            String configuredRoleName = getConfiguredSaddledHorseRoleName();
+            int configuredRoleIndex = NPCPlugin.get().getIndex(configuredRoleName);
+            if (configuredRoleIndex < 0) {
+                return;
+            }
+
+            store.forEachChunk((ArchetypeChunk<EntityStore> chunk, CommandBuffer<EntityStore> ignored) -> {
+                for (int index = 0; index < chunk.size(); index++) {
+                    NPCEntity horse = chunk.getComponent(index, NPCEntity.getComponentType());
+                    EquippedSaddleComponent equippedSaddle = chunk.getComponent(index, EquippedSaddleComponent.getComponentType());
+                    if (horse == null
+                            || equippedSaddle == null
+                            || ItemStack.isEmpty(equippedSaddle.getSaddleStack())
+                            || configuredRoleName.equals(horse.getRoleName())) {
+                        continue;
+                    }
+
+                    Role currentRole = horse.getRole();
+                    if (currentRole == null || currentRole.isRoleChangeRequested()) {
+                        continue;
+                    }
+
+                    Ref<EntityStore> horseRef = chunk.getReferenceTo(index);
+                    if (horseRef == null || !horseRef.isValid()) {
+                        continue;
+                    }
+
+                    RoleChangeSystem.requestRoleChange(
+                            horseRef,
+                            currentRole,
+                            configuredRoleIndex,
+                            true,
+                            store
+                    );
+                }
+            });
+        });
     }
 
     private static void refreshSaddledHorseTracking(Store<EntityStore> store, Ref<EntityStore> horseRef) {

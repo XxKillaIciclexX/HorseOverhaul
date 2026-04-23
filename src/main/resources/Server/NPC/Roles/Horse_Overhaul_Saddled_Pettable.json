@@ -26,7 +26,7 @@
     "Attack": "Root_NPC_Attack_Melee",
     "ProduceItem": "Ingredient_Poop",
     "DayTimeNapWeight": 0,
-    "IsPettable": false,
+    "IsPettable": true,
     "PetTimeout": [ "PT15M", "PT15M" ],
     "IsMountable": true,
     "MountAnchorX": 0,

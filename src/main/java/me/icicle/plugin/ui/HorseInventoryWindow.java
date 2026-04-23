@@ -11,17 +11,15 @@ import me.icicle.plugin.component.EquippedSaddleComponent;
 public class HorseInventoryWindow extends ContainerWindow implements ValidatedWindow {
 
     private static final String HORSE_INVENTORY_TITLE = "Horse Inventory";
-    private static final int SLOT_COUNT = 18;
-    private static final int ROW_COUNT = 2;
     private final Ref<EntityStore> horseRef;
 
-    public HorseInventoryWindow(ItemContainer itemContainer, Ref<EntityStore> horseRef) {
+    public HorseInventoryWindow(ItemContainer itemContainer, Ref<EntityStore> horseRef, int slotCount, int rowCount) {
         super(itemContainer);
         this.horseRef = horseRef;
         getData().addProperty("title", HORSE_INVENTORY_TITLE);
         getData().addProperty("name", HORSE_INVENTORY_TITLE);
-        getData().addProperty("capacity", SLOT_COUNT);
-        getData().addProperty("rows", ROW_COUNT);
+        getData().addProperty("capacity", slotCount);
+        getData().addProperty("rows", rowCount);
     }
 
     @Override

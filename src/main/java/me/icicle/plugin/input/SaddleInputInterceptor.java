@@ -47,7 +47,8 @@ public class SaddleInputInterceptor implements PlayerPacketFilter {
     private static final long LEASH_SYNC_INTERVAL_MS = 250L;
     private static final long TRACKED_ANCHOR_REFRESH_INTERVAL_MS = 500L;
     private static final double MAX_UNMOUNTED_DRIFT_DISTANCE = 0.35D;
-    private static final long[] DISMOUNT_LEASH_REFRESH_DELAYS_MS = {0L, 75L, 200L, 500L};
+    private static final long[] DISMOUNT_LEASH_REFRESH_DELAYS_MS = {75L, 200L, 500L, 1000L};
+    private static final long DISMOUNT_ANCHOR_SETTLE_WINDOW_MS = 1500L;
     private static final long[] MOUNTED_HORSE_INVENTORY_OPEN_DELAYS_MS = {0L, 100L, 250L, 500L, 1000L};
     private static final long PRIMARY_INTERACTION_SUPPRESSION_MS = 400L;
     private static final long RECENT_MOUNT_MOVEMENT_WINDOW_MS = 1500L;
@@ -59,6 +60,7 @@ public class SaddleInputInterceptor implements PlayerPacketFilter {
     private final ConcurrentMap<UUID, MountedMovementSnapshot> lastMountedMovementSnapshots = new ConcurrentHashMap<>();
     private final ConcurrentMap<UUID, Long> mountedHorseInventoryOpenRequests = new ConcurrentHashMap<>();
     private final ConcurrentMap<String, TrackedHorseAnchor> trackedHorseAnchors = new ConcurrentHashMap<>();
+    private final ConcurrentMap<String, Long> pendingDismountAnchorExpirations = new ConcurrentHashMap<>();
     private final ConcurrentMap<Long, Boolean> saddledHorseTargetKeys = new ConcurrentHashMap<>();
     private final ConcurrentMap<Integer, Boolean> primedSaddledHorseStores = new ConcurrentHashMap<>();
     private final ConcurrentMap<UUID, SuppressedPrimaryInteraction> suppressedPrimaryInteractions = new ConcurrentHashMap<>();
@@ -596,7 +598,8 @@ public class SaddleInputInterceptor implements PlayerPacketFilter {
             return;
         }
 
-        rememberHorseAnchor(store, mountedHorseRef);
+        clearTrackedHorseAnchor(store, mountedHorseRef);
+        markPendingDismountAnchor(store, mountedHorseRef);
         scheduleDismountAnchorRefreshes(store, mountedHorseRef);
     }
 
@@ -916,7 +919,7 @@ public class SaddleInputInterceptor implements PlayerPacketFilter {
 
     private boolean isTrackedSaddledHorse(NPCEntity horse, EquippedSaddleComponent equippedSaddle) {
         return horse != null
-                && ("Horse_Overhaul_Saddled".equals(horse.getRoleName())
+                && (SaddleActions.isSaddledHorseRoleName(horse.getRoleName())
                 || (equippedSaddle != null && !ItemStack.isEmpty(equippedSaddle.getSaddleStack())));
     }
 
@@ -983,10 +986,32 @@ public class SaddleInputInterceptor implements PlayerPacketFilter {
         scheduleTrackedHorseAnchorPass(store, horseRef);
     }
 
+    private void clearTrackedHorseAnchor(Store<EntityStore> store, Ref<EntityStore> horseRef) {
+        if (store == null || horseRef == null || !horseRef.isValid()) {
+            return;
+        }
+
+        String horseAnchorKey = getHorseAnchorKey(store, horseRef);
+        trackedHorseAnchors.remove(horseAnchorKey);
+        pendingDismountAnchorExpirations.remove(horseAnchorKey);
+    }
+
+    private void markPendingDismountAnchor(Store<EntityStore> store, Ref<EntityStore> horseRef) {
+        if (store == null || horseRef == null || !horseRef.isValid()) {
+            return;
+        }
+
+        pendingDismountAnchorExpirations.put(
+                getHorseAnchorKey(store, horseRef),
+                System.currentTimeMillis() + DISMOUNT_ANCHOR_SETTLE_WINDOW_MS
+        );
+    }
+
     private void refreshTrackedHorseAnchors() {
         for (TrackedHorseAnchor trackedHorseAnchor : trackedHorseAnchors.values()) {
             if (!trackedHorseAnchor.horseRef.isValid()) {
                 trackedHorseAnchors.remove(trackedHorseAnchor.key);
+                pendingDismountAnchorExpirations.remove(trackedHorseAnchor.key);
                 continue;
             }
 
@@ -998,10 +1023,12 @@ public class SaddleInputInterceptor implements PlayerPacketFilter {
         String horseAnchorKey = getHorseAnchorKey(store, horseRef);
         if (!horseRef.isValid() || !SaddleActions.hasEquippedSaddle(store, horseRef)) {
             trackedHorseAnchors.remove(horseAnchorKey);
+            pendingDismountAnchorExpirations.remove(horseAnchorKey);
             return;
         }
 
         if (isHorseMounted(store, horseRef)) {
+            pendingDismountAnchorExpirations.remove(horseAnchorKey);
             TrackedHorseAnchor trackedHorseAnchor = captureCurrentHorseAnchor(store, horseRef, horseAnchorKey);
             if (trackedHorseAnchor != null) {
                 trackedHorseAnchors.put(horseAnchorKey, trackedHorseAnchor);
@@ -1016,6 +1043,28 @@ public class SaddleInputInterceptor implements PlayerPacketFilter {
                 );
             }
             return;
+        }
+
+        Long pendingDismountExpiration = pendingDismountAnchorExpirations.get(horseAnchorKey);
+        if (pendingDismountExpiration != null) {
+            if (pendingDismountExpiration < System.currentTimeMillis()) {
+                pendingDismountAnchorExpirations.remove(horseAnchorKey, pendingDismountExpiration);
+            } else {
+                TrackedHorseAnchor trackedHorseAnchor = captureCurrentHorseAnchor(store, horseRef, horseAnchorKey);
+                if (trackedHorseAnchor != null) {
+                    trackedHorseAnchors.put(horseAnchorKey, trackedHorseAnchor);
+                    SaddleActions.anchorHorseWanderToLocation(
+                            store,
+                            horseRef,
+                            trackedHorseAnchor.positionX,
+                            trackedHorseAnchor.positionY,
+                            trackedHorseAnchor.positionZ,
+                            trackedHorseAnchor.pitch,
+                            trackedHorseAnchor.yaw
+                    );
+                }
+                return;
+            }
         }
 
         TrackedHorseAnchor trackedHorseAnchor = trackedHorseAnchors.get(horseAnchorKey);
@@ -1112,6 +1161,7 @@ public class SaddleInputInterceptor implements PlayerPacketFilter {
         lastMountedHorseRefs.clear();
         mountedHorseInventoryOpenRequests.clear();
         trackedHorseAnchors.clear();
+        pendingDismountAnchorExpirations.clear();
         saddledHorseTargetKeys.clear();
         primedSaddledHorseStores.clear();
         suppressedPrimaryInteractions.clear();

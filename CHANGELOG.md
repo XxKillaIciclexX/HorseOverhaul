@@ -9,12 +9,17 @@ Changes since `0.4.3`.
 - Completed the first end-to-end `Horse_Overhaul_Saddled` inventory access flow so the combined horse inventory can now be opened while unmounted and while riding, using the same prototype-backed saddle and bag data model.
 - Reworked mounted horse inventory opening to resolve the currently ridden saddled horse on the world thread and retry only until the first successful open, reducing the earlier multi-open flicker when replacing the mounted player's pocket-crafting page.
 - Reworked mounted saddle removal to stage the horse unsaddle after the mounted inventory closes, separating the dismount/reset path from the later role swap so removing the saddle no longer causes the horse to disappear from the world.
+- Added a generated `HorseOverhaul.properties` config file beside the mod jar so saddle storage capacity can be customized externally with `saddle_storage_slots`.
+- Saddle storage rows are now derived automatically from the configured slot count as `slots / 9`, and the horse inventory window scales its total slot count and row count from that same configured saddle storage size.
+- The default config keeps the original Horse Overhaul behavior with `9` saddle storage slots, `1` saddle row, and the original `18`-slot / `2`-row horse inventory layout.
+- Added a `saddled_horse_petting_enabled` config setting so servers can choose whether `Horse_Overhaul_Saddled` uses the current non-pettable interaction flow or a dedicated pettable saddled-horse role.
 
 ### Fixed
 
 - Fixed the long-standing high-priority gap where mounted players could not open the horse inventory at all; mounted `Horse_Overhaul_Saddled` horses now expose the same combined inventory view as unmounted horses.
 - Fixed the mounted inventory open instability where repeated forced window replacement attempts could cause visible flicker during horse inventory open.
 - Fixed the mounted unsaddle regression where removing the saddle from the horse inventory could close the window and leave the horse disappearing during the saddled-to-tamed role transition.
+- Fixed the saddled-horse interaction conflict where the horse could keep requiring petting instead of consistently using the saddled mount and inventory interaction flow.
 
 ### Known Bugs
 

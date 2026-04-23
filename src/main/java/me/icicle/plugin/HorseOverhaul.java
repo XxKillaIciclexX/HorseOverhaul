@@ -11,6 +11,7 @@ import com.hypixel.hytale.server.core.universe.Universe;
 import com.hypixel.hytale.server.core.universe.world.storage.EntityStore;
 import me.icicle.plugin.command.HorseOverhaulHelpCommand;
 import me.icicle.plugin.component.EquippedSaddleComponent;
+import me.icicle.plugin.config.HorseOverhaulConfig;
 import me.icicle.plugin.input.MountedInputTraceWatcher;
 import me.icicle.plugin.input.SaddleInputInterceptor;
 import me.icicle.plugin.interaction.EquipSaddleOnHorseInteraction;
@@ -23,6 +24,7 @@ public class HorseOverhaul extends JavaPlugin {
     private static HorseOverhaul instance;
 
     private ComponentType<EntityStore, EquippedSaddleComponent> equippedSaddleComponentType;
+    private HorseOverhaulConfig horseOverhaulConfig;
     private PacketFilter saddleUsePacketFilter;
     private PacketFilter mountedInputTracePacketFilter;
     private CommandRegistration horseOverhaulHelpCommandRegistration;
@@ -40,6 +42,10 @@ public class HorseOverhaul extends JavaPlugin {
         return equippedSaddleComponentType;
     }
 
+    public HorseOverhaulConfig getHorseOverhaulConfig() {
+        return horseOverhaulConfig;
+    }
+
     public SaddleInputInterceptor getSaddleInputInterceptor() {
         return saddleInputInterceptor;
     }
@@ -48,6 +54,7 @@ public class HorseOverhaul extends JavaPlugin {
     protected void setup() {
         super.setup();
         instance = this;
+        horseOverhaulConfig = HorseOverhaulConfig.load(getFile(), getLogger());
         equippedSaddleComponentType = getEntityStoreRegistry().registerComponent(
                 EquippedSaddleComponent.class,
                 "horse_overhaul_equipped_saddle",
@@ -79,7 +86,10 @@ public class HorseOverhaul extends JavaPlugin {
         }
 
         universe.getUniverseReady().thenRun(() ->
-                universe.getWorlds().values().forEach(saddleInputInterceptor::primeSaddledHorseTargets)
+                universe.getWorlds().values().forEach(world -> {
+                    SaddleActions.syncConfiguredSaddledHorseRoles(world);
+                    saddleInputInterceptor.primeSaddledHorseTargets(world);
+                })
         );
     }
 
