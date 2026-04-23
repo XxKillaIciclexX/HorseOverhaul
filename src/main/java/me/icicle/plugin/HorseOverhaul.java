@@ -15,6 +15,7 @@ import me.icicle.plugin.input.MountedInputTraceWatcher;
 import me.icicle.plugin.input.SaddleInputInterceptor;
 import me.icicle.plugin.interaction.EquipSaddleOnHorseInteraction;
 import me.icicle.plugin.interaction.OpenSaddleInventoryInteraction;
+import me.icicle.plugin.saddle.SaddleActions;
 import org.checkerframework.checker.nullness.compatqual.NonNullDecl;
 
 public class HorseOverhaul extends JavaPlugin {
@@ -84,6 +85,7 @@ public class HorseOverhaul extends JavaPlugin {
 
     @Override
     protected void shutdown() {
+        SaddleActions.shutdown();
         if (saddleInputInterceptor != null) {
             saddleInputInterceptor.shutdown();
             saddleInputInterceptor = null;

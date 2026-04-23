@@ -128,7 +128,7 @@ Group #HorseOverhaulHelpRoot {
         }
 
         Group #UsageSection {
-          Anchor: (Height: 96, Bottom: 8);
+          Anchor: (Height: 118, Bottom: 8);
           LayoutMode: Top;
           Padding: (Top: 10, Left: 12, Right: 12, Bottom: 10);
 
@@ -141,10 +141,16 @@ Group #HorseOverhaulHelpRoot {
           Label #UsageLineOne {
             Anchor: (Height: 22, Top: 4);
             Style: @BodyStyle;
-            Text: "Primary Action on a saddled horse will open the horse and saddle inventories.";
+            Text: "Primary Action on an unmounted saddled horse opens the horse and saddle inventories.";
           }
 
           Label #UsageLineTwo {
+            Anchor: (Height: 22, Top: 2);
+            Style: @BodyStyle;
+            Text: "Press your Inventory key while mounted to open the horse inventory.";
+          }
+
+          Label #UsageLineThree {
             Anchor: (Height: 22, Top: 2);
             Style: @BodyStyle;
             Text: "Press the Use key while holding the saddle to open the saddle's inventory.";
@@ -152,7 +158,7 @@ Group #HorseOverhaulHelpRoot {
         }
 
         Group #BugsSection {
-          Anchor: (Height: 96, Bottom: 12);
+          Anchor: (Height: 118, Bottom: 12);
           LayoutMode: Top;
           Padding: (Top: 10, Left: 12, Right: 12, Bottom: 10);
 
@@ -165,13 +171,13 @@ Group #HorseOverhaulHelpRoot {
           Label #BugLineOne {
             Anchor: (Height: 22, Top: 4);
             Style: @BodyStyle;
-            Text: "High: Saddle and horse's inventories are inaccessible while mounted.";
+            Text: "High: Removing the saddle while mounted can leave the rider visually mounted until they manually dismount.";
           }
 
           Label #BugLineTwo {
             Anchor: (Height: 22, Top: 2);
             Style: @BodyStyle;
-            Text: "High: Equipped saddle is currently displayed read-only in the horse's inventory";
+            Text: "High: Horse inventory is still prototype-backed by the equipped saddle item, not a full native horse inventory.";
           }
         }
 

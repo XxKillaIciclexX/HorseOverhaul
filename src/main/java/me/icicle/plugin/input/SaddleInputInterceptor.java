@@ -48,17 +48,23 @@ public class SaddleInputInterceptor implements PlayerPacketFilter {
     private static final long TRACKED_ANCHOR_REFRESH_INTERVAL_MS = 500L;
     private static final double MAX_UNMOUNTED_DRIFT_DISTANCE = 0.35D;
     private static final long[] DISMOUNT_LEASH_REFRESH_DELAYS_MS = {0L, 75L, 200L, 500L};
+    private static final long[] MOUNTED_HORSE_INVENTORY_OPEN_DELAYS_MS = {0L, 100L, 250L, 500L, 1000L};
     private static final long PRIMARY_INTERACTION_SUPPRESSION_MS = 400L;
+    private static final long RECENT_MOUNT_MOVEMENT_WINDOW_MS = 1500L;
+    private static final double MOUNTED_HORSE_POSITION_MATCH_RADIUS = 4.0D;
 
     private final ConcurrentMap<UUID, Boolean> mountedCrouchState = new ConcurrentHashMap<>();
     private final ConcurrentMap<UUID, Long> lastMountedLeashSyncMs = new ConcurrentHashMap<>();
     private final ConcurrentMap<UUID, Ref<EntityStore>> lastMountedHorseRefs = new ConcurrentHashMap<>();
+    private final ConcurrentMap<UUID, MountedMovementSnapshot> lastMountedMovementSnapshots = new ConcurrentHashMap<>();
+    private final ConcurrentMap<UUID, Long> mountedHorseInventoryOpenRequests = new ConcurrentHashMap<>();
     private final ConcurrentMap<String, TrackedHorseAnchor> trackedHorseAnchors = new ConcurrentHashMap<>();
     private final ConcurrentMap<Long, Boolean> saddledHorseTargetKeys = new ConcurrentHashMap<>();
     private final ConcurrentMap<Integer, Boolean> primedSaddledHorseStores = new ConcurrentHashMap<>();
     private final ConcurrentMap<UUID, SuppressedPrimaryInteraction> suppressedPrimaryInteractions = new ConcurrentHashMap<>();
     private final ConcurrentMap<UUID, RestrictedHotbarWindow> restrictedHotbarWindows = new ConcurrentHashMap<>();
     private final AtomicLong restrictedHotbarWindowIds = new AtomicLong();
+    private final AtomicLong mountedHorseInventoryOpenRequestIds = new AtomicLong();
     private final ScheduledExecutorService delayedAnchorExecutor = Executors.newSingleThreadScheduledExecutor(new ThreadFactory() {
         @Override
         public Thread newThread(Runnable runnable) {
@@ -180,6 +186,18 @@ public class SaddleInputInterceptor implements PlayerPacketFilter {
         if (playerEntityRef == null || !playerEntityRef.isValid()) {
             clearMountedTracking(playerId);
             return;
+        }
+
+        if (mountMovement != null && mountMovement.absolutePosition != null) {
+            lastMountedMovementSnapshots.put(
+                    playerId,
+                    new MountedMovementSnapshot(
+                            mountMovement.absolutePosition.x,
+                            mountMovement.absolutePosition.y,
+                            mountMovement.absolutePosition.z,
+                            System.currentTimeMillis()
+                    )
+            );
         }
 
         boolean isCrouching = mountMovement != null
@@ -396,6 +414,62 @@ public class SaddleInputInterceptor implements PlayerPacketFilter {
         world.execute(() -> SaddleActions.openMountedHorseInventory(store, playerEntityRef));
     }
 
+    private void scheduleOpenMountedHorseInventoryRetries(
+            UUID playerId,
+            Ref<EntityStore> playerEntityRef,
+            Ref<EntityStore> mountedHorseRef,
+            String trigger
+    ) {
+        if (playerId == null
+                || playerEntityRef == null
+                || !playerEntityRef.isValid()
+                || mountedHorseRef == null
+                || !mountedHorseRef.isValid()) {
+            return;
+        }
+
+        long requestId = mountedHorseInventoryOpenRequestIds.incrementAndGet();
+        mountedHorseInventoryOpenRequests.put(playerId, requestId);
+        Store<EntityStore> store = playerEntityRef.getStore();
+        World world = store.getExternalData().getWorld();
+        for (long delayMs : MOUNTED_HORSE_INVENTORY_OPEN_DELAYS_MS) {
+            delayedAnchorExecutor.schedule(
+                    () -> {
+                        if (isCurrentMountedHorseInventoryOpenRequest(playerId, requestId)
+                                && playerEntityRef.isValid()
+                                && mountedHorseRef.isValid()) {
+                            world.execute(() -> {
+                                if (!isCurrentMountedHorseInventoryOpenRequest(playerId, requestId)
+                                        || !playerEntityRef.isValid()
+                                        || !mountedHorseRef.isValid()) {
+                                    return;
+                                }
+
+                                boolean opened = SaddleActions.openMountedHorseInventory(
+                                        store,
+                                        playerEntityRef,
+                                        mountedHorseRef
+                                );
+                                logMountedHorseInventoryOpen(
+                                        playerEntityRef,
+                                        store,
+                                        mountedHorseRef,
+                                        trigger,
+                                        delayMs,
+                                        opened
+                                );
+                                if (opened) {
+                                    mountedHorseInventoryOpenRequests.remove(playerId, requestId);
+                                }
+                            });
+                        }
+                    },
+                    delayMs,
+                    TimeUnit.MILLISECONDS
+            );
+        }
+    }
+
     public void registerRestrictedHotbarWindow(UUID playerId, Window window, short restrictedHotbarSlot) {
         if (playerId == null || window == null) {
             return;
@@ -483,7 +557,7 @@ public class SaddleInputInterceptor implements PlayerPacketFilter {
         }
 
         Store<EntityStore> store = playerEntityRef.getStore();
-        Ref<EntityStore> mountedHorseRef = SaddleActions.getMountedSaddledHorse(store, playerEntityRef);
+        Ref<EntityStore> mountedHorseRef = resolveMountedHorseRefOnWorldThread(playerId, store, playerEntityRef);
         if (mountedHorseRef == null) {
             clearMountedTracking(playerId);
             return;
@@ -496,13 +570,15 @@ public class SaddleInputInterceptor implements PlayerPacketFilter {
         mountedCrouchState.put(playerId, isCrouching);
 
         if (isCrouching && !wasCrouching) {
-            scheduleOpenMountedSaddleInventory(playerEntityRef);
+            scheduleOpenMountedHorseInventoryRetries(playerId, playerEntityRef, mountedHorseRef, "mountCrouch");
         }
     }
 
     private void handleDismountOnWorldThread(UUID playerId, Ref<EntityStore> playerEntityRef) {
         mountedCrouchState.remove(playerId);
         lastMountedLeashSyncMs.remove(playerId);
+        lastMountedMovementSnapshots.remove(playerId);
+        mountedHorseInventoryOpenRequests.remove(playerId);
 
         Store<EntityStore> store = playerEntityRef == null ? null : playerEntityRef.getStore();
         Ref<EntityStore> mountedHorseRef = lastMountedHorseRefs.remove(playerId);
@@ -524,10 +600,12 @@ public class SaddleInputInterceptor implements PlayerPacketFilter {
         scheduleDismountAnchorRefreshes(store, mountedHorseRef);
     }
 
-    private void clearMountedTracking(UUID playerId) {
+    public void clearMountedTracking(UUID playerId) {
         mountedCrouchState.remove(playerId);
         lastMountedLeashSyncMs.remove(playerId);
         lastMountedHorseRefs.remove(playerId);
+        lastMountedMovementSnapshots.remove(playerId);
+        mountedHorseInventoryOpenRequests.remove(playerId);
     }
 
     private void trackRestrictedHotbarSelection(PlayerRef playerRef, SetActiveSlot setActiveSlot) {
@@ -572,15 +650,172 @@ public class SaddleInputInterceptor implements PlayerPacketFilter {
             return false;
         }
 
-        scheduleOpenMountedHorseInventory(playerEntityRef);
+        Ref<EntityStore> mountedHorseRef = lastMountedHorseRefs.get(playerRef.getUuid());
+        if (mountedHorseRef != null && mountedHorseRef.isValid()) {
+            scheduleOpenMountedHorseInventoryRetries(playerRef.getUuid(), playerEntityRef, mountedHorseRef, "inventoryKey");
+            return true;
+        }
+
+        UUID playerId = playerRef.getUuid();
+        Store<EntityStore> store = playerEntityRef.getStore();
+        World world = store.getExternalData().getWorld();
+        world.execute(() -> {
+            Ref<EntityStore> resolvedMountedHorseRef = resolveMountedHorseRefOnWorldThread(playerId, store, playerEntityRef);
+            if (resolvedMountedHorseRef == null || !resolvedMountedHorseRef.isValid()) {
+                lastMountedHorseRefs.remove(playerId);
+                logMountedHorseInventoryResolution(playerEntityRef, "inventoryKeyFallback", false, "not_found");
+                return;
+            }
+
+            lastMountedHorseRefs.put(playerId, resolvedMountedHorseRef);
+            logMountedHorseInventoryResolution(playerEntityRef, "inventoryKeyFallback", true, "resolved");
+            scheduleOpenMountedHorseInventoryRetries(playerId, playerEntityRef, resolvedMountedHorseRef, "inventoryKeyFallback");
+        });
         return true;
+    }
+
+    private boolean isCurrentMountedHorseInventoryOpenRequest(UUID playerId, long requestId) {
+        if (playerId == null) {
+            return false;
+        }
+
+        Long activeRequestId = mountedHorseInventoryOpenRequests.get(playerId);
+        return activeRequestId != null && activeRequestId == requestId;
     }
 
     private boolean shouldHandleMountedHorseWindowOpen(PlayerRef playerRef, ClientOpenWindow clientOpenWindow) {
         return playerRef != null
                 && clientOpenWindow != null
                 && clientOpenWindow.type == WindowType.PocketCrafting
-                && lastMountedHorseRefs.containsKey(playerRef.getUuid());
+                && hasRecentMountedMovement(playerRef.getUuid());
+    }
+
+    private void logMountedHorseInventoryOpen(
+            Ref<EntityStore> playerEntityRef,
+            Store<EntityStore> store,
+            Ref<EntityStore> mountedHorseRef,
+            String trigger,
+            long delayMs,
+            boolean opened
+    ) {
+        HorseOverhaul plugin = HorseOverhaul.get();
+        if (plugin == null || playerEntityRef == null || !playerEntityRef.isValid()) {
+            return;
+        }
+
+        PlayerRef player = store.getComponent(playerEntityRef, PlayerRef.getComponentType());
+        String username = player == null ? "unknown" : player.getUsername();
+        UUID playerId = player == null ? null : player.getUuid();
+        plugin.getLogger().atInfo().log(
+                "[HorseOverhaul mounted] player=%s (%s) trigger=%s delayMs=%s opened=%s horse=%s",
+                username,
+                playerId,
+                trigger,
+                delayMs,
+                opened,
+                SaddleActions.describeHorseTarget(store, mountedHorseRef)
+        );
+    }
+
+    private void logMountedHorseInventoryResolution(
+            Ref<EntityStore> playerEntityRef,
+            String trigger,
+            boolean resolved,
+            String reason
+    ) {
+        HorseOverhaul plugin = HorseOverhaul.get();
+        if (plugin == null || playerEntityRef == null || !playerEntityRef.isValid()) {
+            return;
+        }
+
+        Store<EntityStore> store = playerEntityRef.getStore();
+        PlayerRef player = store.getComponent(playerEntityRef, PlayerRef.getComponentType());
+        String username = player == null ? "unknown" : player.getUsername();
+        UUID playerId = player == null ? null : player.getUuid();
+        plugin.getLogger().atInfo().log(
+                "[HorseOverhaul mounted-resolve] player=%s (%s) trigger=%s resolved=%s reason=%s",
+                username,
+                playerId,
+                trigger,
+                resolved,
+                reason
+        );
+    }
+
+    private boolean hasRecentMountedMovement(UUID playerId) {
+        if (playerId == null) {
+            return false;
+        }
+
+        MountedMovementSnapshot snapshot = lastMountedMovementSnapshots.get(playerId);
+        return snapshot != null && !snapshot.isExpired();
+    }
+
+    private Ref<EntityStore> resolveMountedHorseRefOnWorldThread(
+            UUID playerId,
+            Store<EntityStore> store,
+            Ref<EntityStore> playerEntityRef
+    ) {
+        Ref<EntityStore> mountedHorseRef = SaddleActions.getMountedSaddledHorse(store, playerEntityRef);
+        if (mountedHorseRef != null && mountedHorseRef.isValid()) {
+            return mountedHorseRef;
+        }
+
+        Ref<EntityStore> cachedHorseRef = lastMountedHorseRefs.get(playerId);
+        if (cachedHorseRef != null && cachedHorseRef.isValid() && SaddleActions.isSaddledHorse(store, cachedHorseRef)) {
+            return cachedHorseRef;
+        }
+
+        MountedMovementSnapshot snapshot = lastMountedMovementSnapshots.get(playerId);
+        if (snapshot == null || snapshot.isExpired()) {
+            return null;
+        }
+
+        return findNearestSaddledHorseAtPosition(store, snapshot.x, snapshot.y, snapshot.z);
+    }
+
+    private Ref<EntityStore> findNearestSaddledHorseAtPosition(
+            Store<EntityStore> store,
+            double x,
+            double y,
+            double z
+    ) {
+        final double maxDistanceSq = MOUNTED_HORSE_POSITION_MATCH_RADIUS * MOUNTED_HORSE_POSITION_MATCH_RADIUS;
+        @SuppressWarnings("unchecked")
+        Ref<EntityStore>[] nearestHorseRef = new Ref[1];
+        final double[] nearestDistanceSq = {maxDistanceSq};
+
+        store.forEachChunk((ArchetypeChunk<EntityStore> chunk, CommandBuffer<EntityStore> ignored) -> {
+            for (int index = 0; index < chunk.size(); index++) {
+                NPCEntity horse = chunk.getComponent(index, NPCEntity.getComponentType());
+                if (horse == null) {
+                    continue;
+                }
+
+                Ref<EntityStore> horseRef = chunk.getReferenceTo(index);
+                if (horseRef == null || !horseRef.isValid() || !SaddleActions.isSaddledHorse(store, horseRef)) {
+                    continue;
+                }
+
+                TransformComponent transform = chunk.getComponent(index, TransformComponent.getComponentType());
+                if (transform == null || transform.getPosition() == null) {
+                    continue;
+                }
+
+                double dx = transform.getPosition().x - x;
+                double dy = transform.getPosition().y - y;
+                double dz = transform.getPosition().z - z;
+                double distanceSq = dx * dx + dy * dy + dz * dz;
+                if (distanceSq > nearestDistanceSq[0]) {
+                    continue;
+                }
+
+                nearestDistanceSq[0] = distanceSq;
+                nearestHorseRef[0] = horseRef;
+            }
+        });
+
+        return nearestHorseRef[0];
     }
 
     private void suppressSaddledHorsePrimary(UUID playerId, int targetEntityId) {
@@ -875,6 +1110,7 @@ public class SaddleInputInterceptor implements PlayerPacketFilter {
 
     public void shutdown() {
         lastMountedHorseRefs.clear();
+        mountedHorseInventoryOpenRequests.clear();
         trackedHorseAnchors.clear();
         saddledHorseTargetKeys.clear();
         primedSaddledHorseStores.clear();
@@ -953,6 +1189,25 @@ public class SaddleInputInterceptor implements PlayerPacketFilter {
         private StartedSaddledHorsePrimary(int targetEntityId, short activeHotbarSlot) {
             this.targetEntityId = targetEntityId;
             this.activeHotbarSlot = activeHotbarSlot;
+        }
+    }
+
+    private static final class MountedMovementSnapshot {
+
+        private final double x;
+        private final double y;
+        private final double z;
+        private final long capturedAtMs;
+
+        private MountedMovementSnapshot(double x, double y, double z, long capturedAtMs) {
+            this.x = x;
+            this.y = y;
+            this.z = z;
+            this.capturedAtMs = capturedAtMs;
+        }
+
+        private boolean isExpired() {
+            return System.currentTimeMillis() - capturedAtMs > RECENT_MOUNT_MOVEMENT_WINDOW_MS;
         }
     }
 

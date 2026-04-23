@@ -1,6 +1,11 @@
 package me.icicle.plugin.saddle;
 
 import com.hypixel.hytale.builtin.mounts.MountedComponent;
+import com.hypixel.hytale.builtin.mounts.MountedByComponent;
+import com.hypixel.hytale.builtin.mounts.MountPlugin;
+import com.hypixel.hytale.builtin.mounts.NPCMountComponent;
+import com.hypixel.hytale.component.ArchetypeChunk;
+import com.hypixel.hytale.component.CommandBuffer;
 import com.hypixel.hytale.component.Ref;
 import com.hypixel.hytale.component.Store;
 import com.hypixel.hytale.math.vector.Vector3d;
@@ -27,7 +32,13 @@ import me.icicle.plugin.component.EquippedSaddleComponent;
 import me.icicle.plugin.ui.HorseInventoryWindow;
 import me.icicle.plugin.ui.SaddleBagWindow;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Objects;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.TimeUnit;
 
 public final class SaddleActions {
 
@@ -42,8 +53,22 @@ public final class SaddleActions {
     private static final String HORSE_ROLE_NAME = "Horse";
     private static final String TAMED_HORSE_ROLE_NAME = "Tamed_Horse";
     private static final String SADDLED_HORSE_ROLE_NAME = "Horse_Overhaul_Saddled";
+    private static final long MOUNTED_UNSADDLE_FINALIZE_DELAY_MS = 75L;
+    private static final int MAX_MOUNTED_UNSADDLE_FINALIZE_ATTEMPTS = 8;
+    private static final ScheduledExecutorService mountedUnsaddleExecutor = Executors.newSingleThreadScheduledExecutor(new ThreadFactory() {
+        @Override
+        public Thread newThread(Runnable runnable) {
+            Thread thread = new Thread(runnable, "HorseOverhaul-MountedUnsaddle");
+            thread.setDaemon(true);
+            return thread;
+        }
+    });
 
     private SaddleActions() {
+    }
+
+    public static void shutdown() {
+        mountedUnsaddleExecutor.shutdownNow();
     }
 
     public static boolean openSaddleInventory(Store<EntityStore> store, Ref<EntityStore> playerRef, short hotbarSlot) {
@@ -182,8 +207,27 @@ public final class SaddleActions {
 
     public static boolean openMountedHorseInventory(Store<EntityStore> store, Ref<EntityStore> playerRef) {
         Ref<EntityStore> mountedHorseRef = getMountedSaddledHorse(store, playerRef);
-        return mountedHorseRef != null
-                && openHorseInventory(
+        return openMountedHorseInventory(store, playerRef, mountedHorseRef);
+    }
+
+    public static boolean openMountedHorseInventory(
+            Store<EntityStore> store,
+            Ref<EntityStore> playerRef,
+            Ref<EntityStore> mountedHorseRef
+    ) {
+        if (playerRef == null || !playerRef.isValid() || mountedHorseRef == null || !mountedHorseRef.isValid()) {
+            return false;
+        }
+
+        Player player = store.getComponent(playerRef, Player.getComponentType());
+        if (player == null || !isSaddledHorse(store, mountedHorseRef)) {
+            return false;
+        }
+
+        // Replace the local PocketCrafting page with the mounted horse inventory.
+        player.getWindowManager().closeAllWindows(playerRef, store);
+        player.getPageManager().setPage(playerRef, store, Page.None, true);
+        return openHorseInventory(
                 store,
                 playerRef,
                 mountedHorseRef,
@@ -386,41 +430,17 @@ public final class SaddleActions {
         }
 
         ItemStack updatedSaddleStack = saddleSlotContainer.getItemStack((short) 0);
+        if (ItemStack.isEmpty(updatedSaddleStack)) {
+            clearHorseSaddle(store, playerRef, horseRef);
+            return;
+        }
+
         store.putComponent(
                 horseRef,
                 EquippedSaddleComponent.getComponentType(),
                 new EquippedSaddleComponent(updatedSaddleStack)
         );
         refreshSaddledHorseTracking(store, horseRef);
-
-        if (!ItemStack.isEmpty(updatedSaddleStack)) {
-            return;
-        }
-
-        NPCEntity horse = store.getComponent(horseRef, NPCEntity.getComponentType());
-        if (horse == null) {
-            return;
-        }
-
-        Role currentRole = horse.getRole();
-        if (currentRole != null && !currentRole.isRoleChangeRequested()) {
-            int tamedHorseRoleIndex = NPCPlugin.get().getIndex(TAMED_HORSE_ROLE_NAME);
-            if (tamedHorseRoleIndex >= 0) {
-                RoleChangeSystem.requestRoleChange(
-                        horseRef,
-                        currentRole,
-                        tamedHorseRoleIndex,
-                        true,
-                        store
-                );
-            }
-        }
-
-        if (playerRef == null || !playerRef.isValid()) {
-            return;
-        }
-
-        closePlayerInventoryView(store, playerRef);
     }
 
     private static void syncHorseInventoryContainer(
@@ -562,6 +582,22 @@ public final class SaddleActions {
             Ref<EntityStore> playerRef,
             Ref<EntityStore> horseRef
     ) {
+        boolean wasMounted = dismountHorsePassengers(store, horseRef);
+        if (wasMounted) {
+            closePlayerInventoryView(store, playerRef);
+            scheduleFinalizeHorseUnsaddle(store, horseRef, 0);
+            return;
+        }
+
+        finalizeHorseUnsaddle(store, horseRef);
+        closePlayerInventoryView(store, playerRef);
+    }
+
+    private static void finalizeHorseUnsaddle(
+            Store<EntityStore> store,
+            Ref<EntityStore> horseRef
+    ) {
+        forceClearHorseMountState(store, horseRef);
         store.putComponent(
                 horseRef,
                 EquippedSaddleComponent.getComponentType(),
@@ -570,27 +606,157 @@ public final class SaddleActions {
         refreshSaddledHorseTracking(store, horseRef);
 
         NPCEntity horse = store.getComponent(horseRef, NPCEntity.getComponentType());
-        if (horse != null) {
-            Role currentRole = horse.getRole();
-            if (currentRole != null && !currentRole.isRoleChangeRequested()) {
-                int tamedHorseRoleIndex = NPCPlugin.get().getIndex(TAMED_HORSE_ROLE_NAME);
-                if (tamedHorseRoleIndex >= 0) {
-                    RoleChangeSystem.requestRoleChange(
-                            horseRef,
-                            currentRole,
-                            tamedHorseRoleIndex,
-                            true,
-                            store
-                    );
-                }
-            }
-        }
-
-        if (playerRef == null || !playerRef.isValid()) {
+        if (horse == null) {
             return;
         }
 
-        closePlayerInventoryView(store, playerRef);
+        Role currentRole = horse.getRole();
+        if (currentRole == null || currentRole.isRoleChangeRequested()) {
+            return;
+        }
+
+        int tamedHorseRoleIndex = NPCPlugin.get().getIndex(TAMED_HORSE_ROLE_NAME);
+        if (tamedHorseRoleIndex >= 0) {
+            RoleChangeSystem.requestRoleChange(
+                    horseRef,
+                    currentRole,
+                    tamedHorseRoleIndex,
+                    true,
+                    store
+            );
+        }
+    }
+
+    private static void scheduleFinalizeHorseUnsaddle(
+            Store<EntityStore> store,
+            Ref<EntityStore> horseRef,
+            int attempt
+    ) {
+        if (store == null || horseRef == null || !horseRef.isValid()) {
+            return;
+        }
+
+        mountedUnsaddleExecutor.schedule(
+                () -> store.getExternalData().getWorld().execute(() -> {
+                    if (horseRef == null || !horseRef.isValid()) {
+                        return;
+                    }
+
+                    if (hasHorsePassengers(store, horseRef) && attempt < MAX_MOUNTED_UNSADDLE_FINALIZE_ATTEMPTS) {
+                        scheduleFinalizeHorseUnsaddle(store, horseRef, attempt + 1);
+                        return;
+                    }
+
+                    finalizeHorseUnsaddle(store, horseRef);
+                }),
+                MOUNTED_UNSADDLE_FINALIZE_DELAY_MS,
+                TimeUnit.MILLISECONDS
+        );
+    }
+
+    private static boolean dismountHorsePassengers(
+            Store<EntityStore> store,
+            Ref<EntityStore> horseRef
+    ) {
+        if (store == null || horseRef == null || !horseRef.isValid()) {
+            return false;
+        }
+
+        MountedByComponent mountedByComponent = store.getComponent(horseRef, MountedByComponent.getComponentType());
+        if (mountedByComponent == null || mountedByComponent.getPassengers().isEmpty()) {
+            return false;
+        }
+
+        NPCMountComponent npcMountComponent = store.getComponent(horseRef, NPCMountComponent.getComponentType());
+        HorseOverhaul plugin = HorseOverhaul.get();
+        List<Ref<EntityStore>> passengers = new ArrayList<>(mountedByComponent.getPassengers());
+        boolean hadPassengers = false;
+        for (Ref<EntityStore> passengerRef : passengers) {
+            if (passengerRef == null || !passengerRef.isValid()) {
+                mountedByComponent.removePassenger(passengerRef);
+                continue;
+            }
+
+            hadPassengers = true;
+
+            Player mountedPlayer = store.getComponent(passengerRef, Player.getComponentType());
+            if (mountedPlayer != null) {
+                if (npcMountComponent != null && mountedPlayer.getMountEntityId() != 0) {
+                    MountPlugin.checkDismountNpc(store, passengerRef, mountedPlayer);
+                    npcMountComponent = store.getComponent(horseRef, NPCMountComponent.getComponentType());
+                } else {
+                    mountedPlayer.setMountEntityId(0);
+                    MountPlugin.resetOriginalPlayerMovementSettings(passengerRef, store);
+                    mountedByComponent.removePassenger(passengerRef);
+                    store.tryRemoveComponent(passengerRef, MountedComponent.getComponentType());
+                }
+            } else {
+                mountedByComponent.removePassenger(passengerRef);
+                store.tryRemoveComponent(passengerRef, MountedComponent.getComponentType());
+            }
+
+            PlayerRef mountedPlayerRef = store.getComponent(passengerRef, PlayerRef.getComponentType());
+            if (plugin != null
+                    && plugin.getSaddleInputInterceptor() != null
+                    && mountedPlayerRef != null) {
+                plugin.getSaddleInputInterceptor().clearMountedTracking(mountedPlayerRef.getUuid());
+            }
+        }
+
+        return hadPassengers;
+    }
+
+    private static void forceClearHorseMountState(
+            Store<EntityStore> store,
+            Ref<EntityStore> horseRef
+    ) {
+        if (store == null || horseRef == null || !horseRef.isValid()) {
+            return;
+        }
+
+        HorseOverhaul plugin = HorseOverhaul.get();
+        MountedByComponent mountedByComponent = store.getComponent(horseRef, MountedByComponent.getComponentType());
+        if (mountedByComponent != null) {
+            List<Ref<EntityStore>> passengers = new ArrayList<>(mountedByComponent.getPassengers());
+            for (Ref<EntityStore> passengerRef : passengers) {
+                mountedByComponent.removePassenger(passengerRef);
+                if (passengerRef == null || !passengerRef.isValid()) {
+                    continue;
+                }
+
+                store.tryRemoveComponent(passengerRef, MountedComponent.getComponentType());
+
+                Player mountedPlayer = store.getComponent(passengerRef, Player.getComponentType());
+                if (mountedPlayer != null) {
+                    mountedPlayer.setMountEntityId(0);
+                }
+
+                PlayerRef mountedPlayerRef = store.getComponent(passengerRef, PlayerRef.getComponentType());
+                if (plugin != null
+                        && plugin.getSaddleInputInterceptor() != null
+                        && mountedPlayerRef != null) {
+                    plugin.getSaddleInputInterceptor().clearMountedTracking(mountedPlayerRef.getUuid());
+                }
+            }
+
+            if (mountedByComponent.getPassengers().isEmpty()) {
+                store.removeComponentIfExists(horseRef, MountedByComponent.getComponentType());
+            }
+        }
+
+        store.removeComponentIfExists(horseRef, NPCMountComponent.getComponentType());
+    }
+
+    private static boolean hasHorsePassengers(
+            Store<EntityStore> store,
+            Ref<EntityStore> horseRef
+    ) {
+        if (store == null || horseRef == null || !horseRef.isValid()) {
+            return false;
+        }
+
+        MountedByComponent mountedByComponent = store.getComponent(horseRef, MountedByComponent.getComponentType());
+        return mountedByComponent != null && !mountedByComponent.getPassengers().isEmpty();
     }
 
     private static ItemStack normalizeItemStack(ItemStack itemStack) {
@@ -641,59 +807,17 @@ public final class SaddleActions {
         }
 
         MountedComponent mountedComponent = store.getComponent(playerRef, MountedComponent.getComponentType());
-        if (mountedComponent == null) {
-            return null;
+        if (mountedComponent != null) {
+            Ref<EntityStore> mountedHorseRef = mountedComponent.getMountedToEntity();
+            if (mountedHorseRef != null && mountedHorseRef.isValid()) {
+                NPCEntity mountedHorse = store.getComponent(mountedHorseRef, NPCEntity.getComponentType());
+                if (mountedHorse != null && isSaddledHorse(store, mountedHorseRef)) {
+                    return mountedHorseRef;
+                }
+            }
         }
 
-        Ref<EntityStore> mountedHorseRef = mountedComponent.getMountedToEntity();
-        if (mountedHorseRef == null || !mountedHorseRef.isValid()) {
-            return null;
-        }
-
-        NPCEntity mountedHorse = store.getComponent(mountedHorseRef, NPCEntity.getComponentType());
-        if (mountedHorse == null) {
-            return null;
-        }
-
-        return isSaddledHorse(store, mountedHorseRef) ? mountedHorseRef : null;
-    }
-
-    public static void anchorHorseWanderToCurrentLocation(Store<EntityStore> store, Ref<EntityStore> horseRef) {
-        if (horseRef == null || !horseRef.isValid()) {
-            return;
-        }
-
-        NPCEntity horse = store.getComponent(horseRef, NPCEntity.getComponentType());
-        TransformComponent transform = store.getComponent(horseRef, TransformComponent.getComponentType());
-        if (horse == null || transform == null || transform.getPosition() == null) {
-            return;
-        }
-
-        if (transform.getRotation() != null) {
-            horse.saveLeashInformation(transform.getPosition(), transform.getRotation());
-            return;
-        }
-
-        horse.getLeashPoint().assign(transform.getPosition());
-    }
-
-    public static void anchorHorseWanderToLocation(
-            Store<EntityStore> store,
-            Ref<EntityStore> horseRef,
-            double x,
-            double y,
-            double z
-    ) {
-        if (horseRef == null || !horseRef.isValid()) {
-            return;
-        }
-
-        NPCEntity horse = store.getComponent(horseRef, NPCEntity.getComponentType());
-        if (horse == null) {
-            return;
-        }
-
-        horse.getLeashPoint().assign(x, y, z);
+        return findMountedSaddledHorseByPassenger(store, playerRef);
     }
 
     public static void anchorHorseWanderToLocation(
@@ -742,6 +866,52 @@ public final class SaddleActions {
         }
 
         plugin.getSaddleInputInterceptor().refreshSaddledHorseTarget(store, horseRef);
+    }
+
+    private static Ref<EntityStore> findMountedSaddledHorseByPassenger(
+            Store<EntityStore> store,
+            Ref<EntityStore> playerRef
+    ) {
+        @SuppressWarnings("unchecked")
+        Ref<EntityStore>[] result = new Ref[1];
+
+        store.forEachChunk((ArchetypeChunk<EntityStore> chunk, CommandBuffer<EntityStore> ignored) -> {
+            if (result[0] != null) {
+                return;
+            }
+
+            for (int index = 0; index < chunk.size(); index++) {
+                NPCEntity horse = chunk.getComponent(index, NPCEntity.getComponentType());
+                MountedByComponent mountedBy = chunk.getComponent(index, MountedByComponent.getComponentType());
+                if (horse == null || mountedBy == null || !containsPassenger(mountedBy.getPassengers(), playerRef)) {
+                    continue;
+                }
+
+                Ref<EntityStore> horseRef = chunk.getReferenceTo(index);
+                if (horseRef != null && horseRef.isValid() && isSaddledHorse(store, horseRef)) {
+                    result[0] = horseRef;
+                    return;
+                }
+            }
+        });
+
+        return result[0];
+    }
+
+    private static boolean containsPassenger(List<Ref<EntityStore>> passengers, Ref<EntityStore> playerRef) {
+        if (passengers == null || passengers.isEmpty() || playerRef == null) {
+            return false;
+        }
+
+        for (Ref<EntityStore> passenger : passengers) {
+            if (passenger != null
+                    && passenger.getStore() == playerRef.getStore()
+                    && passenger.getIndex() == playerRef.getIndex()) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static short resolveRestrictedHotbarSlot(

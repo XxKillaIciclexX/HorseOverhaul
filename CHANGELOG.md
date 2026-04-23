@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.5.0 - 2026-04-22
+
+Changes since `0.4.3`.
+
+### Changed
+
+- Completed the first end-to-end `Horse_Overhaul_Saddled` inventory access flow so the combined horse inventory can now be opened while unmounted and while riding, using the same prototype-backed saddle and bag data model.
+- Reworked mounted horse inventory opening to resolve the currently ridden saddled horse on the world thread and retry only until the first successful open, reducing the earlier multi-open flicker when replacing the mounted player's pocket-crafting page.
+- Reworked mounted saddle removal to stage the horse unsaddle after the mounted inventory closes, separating the dismount/reset path from the later role swap so removing the saddle no longer causes the horse to disappear from the world.
+
+### Fixed
+
+- Fixed the long-standing high-priority gap where mounted players could not open the horse inventory at all; mounted `Horse_Overhaul_Saddled` horses now expose the same combined inventory view as unmounted horses.
+- Fixed the mounted inventory open instability where repeated forced window replacement attempts could cause visible flicker during horse inventory open.
+- Fixed the mounted unsaddle regression where removing the saddle from the horse inventory could close the window and leave the horse disappearing during the saddled-to-tamed role transition.
+
+### Known Bugs
+
+- High Priority: Removing the saddle while still mounted can leave the rider visually mounted on the now-unsaddled horse until they manually dismount, even though the horse inventory closes and the horse remains in the world.
+- High Priority: The horse inventory implementation is still a prototype backed by the horse's stored equipped-saddle item state rather than a full native horse entity inventory layout.
+
 ## 0.4.3 - 2026-04-22
 
 Changes since `0.4.2`.
