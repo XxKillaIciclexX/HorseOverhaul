@@ -17,8 +17,8 @@ Changes since `0.5.0`.
 
 ### Known Bugs
 
-- High Priority: Removing the saddle while still mounted can leave the rider floating client-side until they press the dismount button, even though the player is already dismounted and the horse inventory closes normally.
-- High Priority: The horse inventory implementation is still a prototype backed by the horse's stored equipped-saddle item state rather than a full native horse entity inventory layout.
+- Medium Priority: Removing the saddle while still mounted can leave the rider floating client-side until they press the dismount button, even though the player is already dismounted and the horse inventory closes normally.
+- Medium Priority: The horse inventory implementation is still a prototype backed by the horse's stored equipped-saddle item state rather than a full native horse entity inventory layout.
 
 ## 0.5.0 - 2026-04-22
 
