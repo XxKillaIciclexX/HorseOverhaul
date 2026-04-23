@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.5.1 - 2026-04-23
+
+Changes since `0.5.0`.
+
+### Changed
+
+- Reworked horse mane preservation from a timing-based post-role-swap model override into deterministic black and grey horse appearance variants for both saddled and unsaddled tamed horses.
+- Saddled-horse role selection now resolves the current mane color first, then routes the horse into matching black or grey saddled-role variants, including the pettable saddled-role config path.
+- Unsaddling now routes the horse back into matching black or grey tamed-horse variants so mane appearance stays stable through both saddle and unsaddle transitions.
+
+### Fixed
+
+- Fixed the regression where saddling or unsaddling could reroll the horse's mane attachment color during the `Horse_Overhaul_Saddled` role transition.
+- Fixed the saddle inventory bug where the equipped saddle could be placed into its own saddle bag container and disappear.
+
+### Known Bugs
+
+- High Priority: Removing the saddle while still mounted can leave the rider floating client-side until they press the dismount button, even though the player is already dismounted and the horse inventory closes normally.
+- High Priority: The horse inventory implementation is still a prototype backed by the horse's stored equipped-saddle item state rather than a full native horse entity inventory layout.
+
 ## 0.5.0 - 2026-04-22
 
 Changes since `0.4.3`.
@@ -23,7 +43,7 @@ Changes since `0.4.3`.
 
 ### Known Bugs
 
-- High Priority: Removing the saddle while still mounted can leave the rider visually mounted on the now-unsaddled horse until they manually dismount, even though the horse inventory closes and the horse remains in the world.
+- High Priority: Removing the saddle while still mounted can leave the rider floating client-side until they press the dismount button, even though the player is already dismounted and the horse inventory closes normally.
 - High Priority: The horse inventory implementation is still a prototype backed by the horse's stored equipped-saddle item state rather than a full native horse entity inventory layout.
 
 ## 0.4.3 - 2026-04-22

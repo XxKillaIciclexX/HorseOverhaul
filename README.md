@@ -105,7 +105,7 @@ build/libs/HorseOverhaul-0.5.0.jar
 
 ## Known Limitations
 
-- Removing the saddle while still mounted can leave the rider visually mounted until they manually dismount.
+- Removing the saddle while still mounted can leave the rider floating client-side until they press the dismount button, even though the player is already dismounted server-side.
 - The horse inventory is still prototype-backed by the equipped saddle item rather than a full native horse entity inventory.
 
 ## Changelog

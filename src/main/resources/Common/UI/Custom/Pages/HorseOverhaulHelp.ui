@@ -171,7 +171,7 @@ Group #HorseOverhaulHelpRoot {
           Label #BugLineOne {
             Anchor: (Height: 22, Top: 4);
             Style: @BodyStyle;
-            Text: "High: Removing the saddle while mounted can leave the rider visually mounted until they manually dismount.";
+            Text: "High: Removing the saddle while mounted can leave the rider floating until they press the dismount button.";
           }
 
           Label #BugLineTwo {

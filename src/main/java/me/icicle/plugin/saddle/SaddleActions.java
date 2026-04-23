@@ -21,6 +21,7 @@ import com.hypixel.hytale.server.core.inventory.container.SimpleItemContainer;
 import com.hypixel.hytale.server.core.inventory.container.filter.FilterActionType;
 import com.hypixel.hytale.server.core.inventory.container.filter.SlotFilter;
 import com.hypixel.hytale.server.core.entity.entities.player.windows.Window;
+import com.hypixel.hytale.server.core.modules.entity.component.ModelComponent;
 import com.hypixel.hytale.server.core.modules.entity.component.TransformComponent;
 import com.hypixel.hytale.server.core.universe.PlayerRef;
 import com.hypixel.hytale.server.core.universe.world.storage.EntityStore;
@@ -36,6 +37,7 @@ import org.bson.BsonDocument;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -54,6 +56,17 @@ public final class SaddleActions {
     private static final String TAMED_HORSE_ROLE_NAME = "Tamed_Horse";
     private static final String SADDLED_HORSE_ROLE_NAME = "Horse_Overhaul_Saddled";
     private static final String PETTABLE_SADDLED_HORSE_ROLE_NAME = "Horse_Overhaul_Saddled_Pettable";
+    private static final String TAMED_HORSE_BLACK_ROLE_NAME = "Tamed_Horse_Overhaul_Black";
+    private static final String TAMED_HORSE_GREY_ROLE_NAME = "Tamed_Horse_Overhaul_Grey";
+    private static final String SADDLED_HORSE_BLACK_ROLE_NAME = "Horse_Overhaul_Saddled_Black";
+    private static final String SADDLED_HORSE_GREY_ROLE_NAME = "Horse_Overhaul_Saddled_Grey";
+    private static final String PETTABLE_SADDLED_HORSE_BLACK_ROLE_NAME = "Horse_Overhaul_Saddled_Pettable_Black";
+    private static final String PETTABLE_SADDLED_HORSE_GREY_ROLE_NAME = "Horse_Overhaul_Saddled_Pettable_Grey";
+    private static final String MODEL_BLACK_SUFFIX = "_Black";
+    private static final String MODEL_GREY_SUFFIX = "_Grey";
+    private static final String MANE_ATTACHMENT_KEY = "Hair";
+    private static final String MANE_COLOR_BLACK = "Black";
+    private static final String MANE_COLOR_GREY = "Grey";
     private static final long MOUNTED_UNSADDLE_FINALIZE_DELAY_MS = 75L;
     private static final int MAX_MOUNTED_UNSADDLE_FINALIZE_ATTEMPTS = 8;
     private static final ScheduledExecutorService mountedUnsaddleExecutor = Executors.newSingleThreadScheduledExecutor(new ThreadFactory() {
@@ -276,9 +289,7 @@ public final class SaddleActions {
         }
 
         String roleName = targetNpc.getRoleName();
-        boolean isHorse = HORSE_ROLE_NAME.equals(roleName);
-        boolean isTamedHorse = TAMED_HORSE_ROLE_NAME.equals(roleName);
-        if (!isHorse && !isTamedHorse) {
+        if (!isUnsaddledHorseRoleName(roleName)) {
             return false;
         }
 
@@ -292,15 +303,10 @@ public final class SaddleActions {
             return false;
         }
 
-        int saddledHorseRoleIndex = NPCPlugin.get().getIndex(getConfiguredSaddledHorseRoleName());
+        String maneColor = resolveHorseManeColor(store, targetEntity);
+        int saddledHorseRoleIndex = NPCPlugin.get().getIndex(getConfiguredSaddledHorseRoleName(maneColor));
         if (saddledHorseRoleIndex < 0) {
             return false;
-        }
-
-        if (isHorse || isTamedHorse) {
-            if (currentRole == null || currentRole.isRoleChangeRequested()) {
-                return false;
-            }
         }
 
         if (!hotbar.removeItemStackFromSlot(hotbarSlot, 1).succeeded()) {
@@ -359,7 +365,11 @@ public final class SaddleActions {
 
     public static boolean isSaddledHorseRoleName(String roleName) {
         return SADDLED_HORSE_ROLE_NAME.equals(roleName)
-                || PETTABLE_SADDLED_HORSE_ROLE_NAME.equals(roleName);
+                || PETTABLE_SADDLED_HORSE_ROLE_NAME.equals(roleName)
+                || SADDLED_HORSE_BLACK_ROLE_NAME.equals(roleName)
+                || SADDLED_HORSE_GREY_ROLE_NAME.equals(roleName)
+                || PETTABLE_SADDLED_HORSE_BLACK_ROLE_NAME.equals(roleName)
+                || PETTABLE_SADDLED_HORSE_GREY_ROLE_NAME.equals(roleName);
     }
 
     private static SimpleItemContainer createHorseSaddleSlotContainer(
@@ -534,6 +544,14 @@ public final class SaddleActions {
             horseInventoryContainer.setSlotFilter(FilterActionType.REMOVE, slot, SlotFilter.DENY);
             horseInventoryContainer.setSlotFilter(FilterActionType.DROP, slot, SlotFilter.DENY);
         }
+
+        for (short slot = HORSE_BAG_SLOT_START; slot < horseInventoryContainer.getCapacity(); slot++) {
+            horseInventoryContainer.setSlotFilter(
+                    FilterActionType.ADD,
+                    slot,
+                    (actionType, container, targetSlot, itemStack) -> !isSaddleItem(itemStack)
+            );
+        }
     }
 
     private static void loadLockedHorseGearSlots(SimpleItemContainer horseInventoryContainer) {
@@ -608,11 +626,14 @@ public final class SaddleActions {
 
         ItemStackItemContainer existingContainer = ItemStackItemContainer.getContainer(parentContainer, slot);
         if (existingContainer != null && existingContainer.getCapacity() == capacity) {
+            configureSaddleBagFilters(existingContainer);
             return existingContainer;
         }
 
         if (existingContainer == null) {
-            return ItemStackItemContainer.ensureContainer(parentContainer, slot, capacity);
+            ItemStackItemContainer createdContainer = ItemStackItemContainer.ensureContainer(parentContainer, slot, capacity);
+            configureSaddleBagFilters(createdContainer);
+            return createdContainer;
         }
 
         ItemStack[] resizedItems = new ItemStack[capacity];
@@ -634,7 +655,9 @@ public final class SaddleActions {
         ItemStackItemContainer.CAPACITY_CODEC.put(updatedContainerMetadata, capacity, EmptyExtraInfo.EMPTY);
         ItemStackItemContainer.ITEMS_CODEC.put(updatedContainerMetadata, resizedItems, EmptyExtraInfo.EMPTY);
         parentContainer.setItemStackForSlot(slot, itemStack.withMetadata(metadata));
-        return ItemStackItemContainer.getContainer(parentContainer, slot);
+        ItemStackItemContainer resizedContainer = ItemStackItemContainer.getContainer(parentContainer, slot);
+        configureSaddleBagFilters(resizedContainer);
+        return resizedContainer;
     }
 
     private static void clearHorseSaddle(
@@ -675,7 +698,12 @@ public final class SaddleActions {
             return;
         }
 
-        int tamedHorseRoleIndex = NPCPlugin.get().getIndex(TAMED_HORSE_ROLE_NAME);
+        int tamedHorseRoleIndex = NPCPlugin.get().getIndex(
+                getConfiguredUnsaddledHorseRoleName(resolveHorseManeColor(store, horseRef))
+        );
+        if (tamedHorseRoleIndex < 0) {
+            tamedHorseRoleIndex = NPCPlugin.get().getIndex(TAMED_HORSE_ROLE_NAME);
+        }
         if (tamedHorseRoleIndex >= 0) {
             RoleChangeSystem.requestRoleChange(
                     horseRef,
@@ -847,13 +875,21 @@ public final class SaddleActions {
                 : (short) (1 + getConfiguredSaddleRowCount());
     }
 
-    private static String getConfiguredSaddledHorseRoleName() {
+    private static String getConfiguredSaddledHorseRoleName(String maneColor) {
+        String normalizedManeColor = normalizeHorseManeColor(maneColor);
         HorseOverhaul plugin = HorseOverhaul.get();
-        return plugin != null
+        boolean pettingEnabled = plugin != null
                 && plugin.getHorseOverhaulConfig() != null
-                && plugin.getHorseOverhaulConfig().isSaddledHorsePettingEnabled()
-                ? PETTABLE_SADDLED_HORSE_ROLE_NAME
-                : SADDLED_HORSE_ROLE_NAME;
+                && plugin.getHorseOverhaulConfig().isSaddledHorsePettingEnabled();
+        if (pettingEnabled) {
+            return MANE_COLOR_BLACK.equals(normalizedManeColor)
+                    ? PETTABLE_SADDLED_HORSE_BLACK_ROLE_NAME
+                    : PETTABLE_SADDLED_HORSE_GREY_ROLE_NAME;
+        }
+
+        return MANE_COLOR_BLACK.equals(normalizedManeColor)
+                ? SADDLED_HORSE_BLACK_ROLE_NAME
+                : SADDLED_HORSE_GREY_ROLE_NAME;
     }
 
     private static ItemStack normalizeItemStack(ItemStack itemStack) {
@@ -963,20 +999,13 @@ public final class SaddleActions {
 
         world.execute(() -> {
             Store<EntityStore> store = world.getEntityStore().getStore();
-            String configuredRoleName = getConfiguredSaddledHorseRoleName();
-            int configuredRoleIndex = NPCPlugin.get().getIndex(configuredRoleName);
-            if (configuredRoleIndex < 0) {
-                return;
-            }
-
             store.forEachChunk((ArchetypeChunk<EntityStore> chunk, CommandBuffer<EntityStore> ignored) -> {
                 for (int index = 0; index < chunk.size(); index++) {
                     NPCEntity horse = chunk.getComponent(index, NPCEntity.getComponentType());
                     EquippedSaddleComponent equippedSaddle = chunk.getComponent(index, EquippedSaddleComponent.getComponentType());
                     if (horse == null
                             || equippedSaddle == null
-                            || ItemStack.isEmpty(equippedSaddle.getSaddleStack())
-                            || configuredRoleName.equals(horse.getRoleName())) {
+                            || ItemStack.isEmpty(equippedSaddle.getSaddleStack())) {
                         continue;
                     }
 
@@ -987,6 +1016,16 @@ public final class SaddleActions {
 
                     Ref<EntityStore> horseRef = chunk.getReferenceTo(index);
                     if (horseRef == null || !horseRef.isValid()) {
+                        continue;
+                    }
+
+                    String configuredRoleName = getConfiguredSaddledHorseRoleName(resolveHorseManeColor(store, horseRef));
+                    if (configuredRoleName.equals(horse.getRoleName())) {
+                        continue;
+                    }
+
+                    int configuredRoleIndex = NPCPlugin.get().getIndex(configuredRoleName);
+                    if (configuredRoleIndex < 0) {
                         continue;
                     }
 
@@ -1009,6 +1048,88 @@ public final class SaddleActions {
         }
 
         plugin.getSaddleInputInterceptor().refreshSaddledHorseTarget(store, horseRef);
+    }
+
+    private static void configureSaddleBagFilters(ItemStackItemContainer saddleBagContainer) {
+        if (saddleBagContainer == null) {
+            return;
+        }
+
+        for (short slot = 0; slot < saddleBagContainer.getCapacity(); slot++) {
+            saddleBagContainer.setSlotFilter(
+                    FilterActionType.ADD,
+                    slot,
+                    (actionType, container, targetSlot, itemStack) -> !isSaddleItem(itemStack)
+            );
+        }
+    }
+
+    private static boolean isUnsaddledHorseRoleName(String roleName) {
+        return HORSE_ROLE_NAME.equals(roleName)
+                || TAMED_HORSE_ROLE_NAME.equals(roleName)
+                || TAMED_HORSE_BLACK_ROLE_NAME.equals(roleName)
+                || TAMED_HORSE_GREY_ROLE_NAME.equals(roleName);
+    }
+
+    private static String getConfiguredUnsaddledHorseRoleName(String maneColor) {
+        return MANE_COLOR_BLACK.equals(normalizeHorseManeColor(maneColor))
+                ? TAMED_HORSE_BLACK_ROLE_NAME
+                : TAMED_HORSE_GREY_ROLE_NAME;
+    }
+
+    private static String resolveHorseManeColor(Store<EntityStore> store, Ref<EntityStore> horseRef) {
+        if (store == null || horseRef == null || !horseRef.isValid()) {
+            return MANE_COLOR_GREY;
+        }
+
+        NPCEntity horse = store.getComponent(horseRef, NPCEntity.getComponentType());
+        if (horse != null) {
+            String roleColor = colorFromNamedVariant(horse.getRoleName());
+            if (roleColor != null) {
+                return roleColor;
+            }
+        }
+
+        ModelComponent modelComponent = store.getComponent(horseRef, ModelComponent.getComponentType());
+        if (modelComponent == null || modelComponent.getModel() == null) {
+            return MANE_COLOR_GREY;
+        }
+
+        String modelColor = colorFromNamedVariant(modelComponent.getModel().getModelAssetId());
+        if (modelColor != null) {
+            return modelColor;
+        }
+
+        Map<String, String> randomAttachmentIds = modelComponent.getModel().getRandomAttachmentIds();
+        if (randomAttachmentIds == null) {
+            return MANE_COLOR_GREY;
+        }
+
+        return normalizeHorseManeColor(randomAttachmentIds.get(MANE_ATTACHMENT_KEY));
+    }
+
+    private static String colorFromNamedVariant(String value) {
+        if (value == null) {
+            return null;
+        }
+
+        if (value.endsWith(MODEL_BLACK_SUFFIX)) {
+            return MANE_COLOR_BLACK;
+        }
+
+        if (value.endsWith(MODEL_GREY_SUFFIX)) {
+            return MANE_COLOR_GREY;
+        }
+
+        return null;
+    }
+
+    private static String normalizeHorseManeColor(String value) {
+        if (MANE_COLOR_BLACK.equalsIgnoreCase(value)) {
+            return MANE_COLOR_BLACK;
+        }
+
+        return MANE_COLOR_GREY;
     }
 
     private static Ref<EntityStore> findMountedSaddledHorseByPassenger(
