@@ -5,11 +5,17 @@
   "Description": "Overhaul your horses and add saddles for extra storage.",
   "Authors": [
     {
-      "Name": "Icicle"
+      "Name": "xIciclex",
+      "Website": "https://github.com/XxKillaIciclexX"
     }
   ],
+  "Website": "https://www.curseforge.com/hytale/mods/horse-overhaul",
   "Main": "me.icicle.plugin.HorseOverhaul",
   "ServerVersion": "2026.03.26-89796e57b",
+  "Dependencies": { },
+  "OptionalDependencies": { },
+  "LoadBefore": { },
+  "DisabledByDefault": false,
   "IncludesAssetPack": true,
   "SubPlugins": []
 }
