@@ -5,14 +5,14 @@ plugins {
 }
 
 group = "me.icicle"
-version = "0.5.0"
+version = "0.5.1"
 
 repositories {
     mavenCentral()
 }
 
 dependencies {
-    compileOnly(files("libs/HytaleServer.jar"))
+    compileOnly(files("libs/pre-release/HytaleServer.jar"))
     testImplementation(platform("org.junit:junit-bom:6.0.0"))
     testImplementation("org.junit.jupiter:junit-jupiter")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")

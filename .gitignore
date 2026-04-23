@@ -41,5 +41,6 @@ bin/
 
 ### Mac OS ###
 .DS_Store
-libs/HytaleServer.jar
+libs/main/HytaleServer.jar
+libs/pre-release/HytaleServer.jar
 /exportToHTML/

@@ -4,8 +4,8 @@ import com.hypixel.hytale.component.Ref;
 import com.hypixel.hytale.component.Store;
 import com.hypixel.hytale.component.ArchetypeChunk;
 import com.hypixel.hytale.component.CommandBuffer;
-import com.hypixel.hytale.math.vector.Vector3d;
-import com.hypixel.hytale.math.vector.Vector3f;
+import com.hypixel.hytale.math.vector.Rotation3f;
+import org.joml.Vector3d;
 import com.hypixel.hytale.protocol.InteractionType;
 import com.hypixel.hytale.protocol.Packet;
 import com.hypixel.hytale.builtin.mounts.MountedByComponent;
@@ -1099,7 +1099,7 @@ public class SaddleInputInterceptor implements PlayerPacketFilter {
         }
 
         Vector3d position = transform.getPosition();
-        Vector3f rotation = transform.getRotation();
+        Rotation3f rotation = transform.getRotation();
         return new TrackedHorseAnchor(
                 horseAnchorKey,
                 store,
@@ -1107,9 +1107,9 @@ public class SaddleInputInterceptor implements PlayerPacketFilter {
                 position.x,
                 position.y,
                 position.z,
-                rotation.getPitch(),
-                rotation.getYaw(),
-                rotation.getRoll()
+                rotation.pitch(),
+                rotation.yaw(),
+                rotation.roll()
         );
     }
 
@@ -1129,7 +1129,7 @@ public class SaddleInputInterceptor implements PlayerPacketFilter {
             return;
         }
 
-        if (transform.getPosition().distanceSquaredTo(
+        if (transform.getPosition().distanceSquared(
                 trackedHorseAnchor.positionX,
                 trackedHorseAnchor.positionY,
                 trackedHorseAnchor.positionZ
@@ -1145,7 +1145,7 @@ public class SaddleInputInterceptor implements PlayerPacketFilter {
                 store
         );
         if (transform.getRotation() != null) {
-            transform.getRotation().assign(
+            transform.getRotation().set(
                     trackedHorseAnchor.pitch,
                     trackedHorseAnchor.yaw,
                     trackedHorseAnchor.roll

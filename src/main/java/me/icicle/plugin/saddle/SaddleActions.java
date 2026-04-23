@@ -9,8 +9,8 @@ import com.hypixel.hytale.component.CommandBuffer;
 import com.hypixel.hytale.component.Ref;
 import com.hypixel.hytale.component.Store;
 import com.hypixel.hytale.codec.EmptyExtraInfo;
-import com.hypixel.hytale.math.vector.Vector3d;
-import com.hypixel.hytale.math.vector.Vector3f;
+import com.hypixel.hytale.math.vector.Rotation3f;
+import org.joml.Vector3d;
 import com.hypixel.hytale.protocol.packets.interface_.Page;
 import com.hypixel.hytale.server.core.entity.entities.Player;
 import com.hypixel.hytale.server.core.inventory.InventoryComponent;
@@ -937,7 +937,7 @@ public final class SaddleActions {
 
         horse.saveLeashInformation(
                 new Vector3d(x, y, z),
-                new Vector3f(pitch, yaw, 0.0F)
+                new Rotation3f(pitch, yaw, 0.0F)
         );
     }
 
